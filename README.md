@@ -10,7 +10,17 @@ Em casas com mais de um gato, é comum que um gato acima do peso coma a ração 
 
 ## Arquitetura
 
-![Arquitetura estrutural](docs/arquitetura-estrutural.png)
+```mermaid
+flowchart LR
+    U(["👤 Usuário"]) --> APP["📱 App FeedCat"]
+    APP -- "HTTP via Wi-Fi<br/>pesos, Wi-Fi, abrir/fechar" --> ESP["ESP32"]
+    ESP -- "respostas" --> APP
+    CEL["Células de carga"] -- "sinal analógico" --> HX["HX711"]
+    HX -- "peso digital" --> ESP
+    ESP -- "UART 115200 8N1<br/>dígitos ASCII e #" --> FPGA["FPGA"]
+    FPGA -- "PWM 3,3 V" --> CONV["Conversor de nível<br/>3,3 V → 5 V"]
+    CONV -- "PWM 5 V" --> SERVO["Servo MG995"]
+```
 
 | Componente | Função |
 |---|---|
@@ -19,12 +29,6 @@ Em casas com mais de um gato, é comum que um gato acima do peso coma a ração 
 | **ESP32** | Ponte entre o app e a FPGA: cria uma rede Wi-Fi, expõe uma API HTTP e envia os dados para a FPGA via UART |
 | **Servo MG995** | Abre e fecha o compartimento de comida |
 | **App FeedCat (Expo / React Native)** | Configura o Wi-Fi do ESP32, define os pesos mínimo e máximo e abre ou fecha o compartimento manualmente |
-
-```
- App (celular) ──HTTP──▶ ESP32 ──UART 115200 8N1──▶ FPGA ──PWM──▶ Servo
-                           ▲
-                 HX711 + células de carga
-```
 
 ## Circuito digital (FPGA)
 
@@ -136,3 +140,7 @@ Cada semana do projeto virou uma versão (tag) do repositório:
 - João Felipe Pereira Carvalho
 
 Professor: Reginaldo Arakaki
+
+## Licença
+
+Distribuído sob a licença MIT. Veja [LICENSE](LICENSE).
