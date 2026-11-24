@@ -1,111 +1,116 @@
 # FeedCat 🐱
 
-Alimentador inteligente que só libera a comida para o gato certo, identificado pelo **peso**.
+**English** | [Português (BR)](README.pt-BR.md)
 
-Projeto final da disciplina **PCS3645 – Laboratório Digital II** (Escola Politécnica da USP, 2024), Turma 5, Bancada A5.
+A smart feeder that gives food only to the right cat, identified by its **weight**.
 
-## O problema
+Final project for **PCS3645 – Digital Laboratory II** at the Polytechnic School of the University of São Paulo (Escola Politécnica da USP), 2024. Class 5, bench A5.
 
-Em casas com mais de um gato, é comum que um gato acima do peso coma a ração de outro que está em dieta ou precisa ganhar peso. O FeedCat resolve isso com uma balança na frente do compartimento de comida: quando um animal sobe na balança, o sistema compara o peso medido com uma faixa configurada (peso mínimo e máximo). Se o peso estiver dentro da faixa, um servo motor abre o compartimento. Caso contrário, o compartimento continua fechado.
+## The problem
 
-## Arquitetura
+In homes with more than one cat, an overweight cat often eats the food meant for a cat on a diet, or for one that needs to gain weight. FeedCat solves this with a scale in front of the food compartment. When an animal steps on the scale, the system compares its weight with a configured range (minimum and maximum weight). If the weight is inside the range, a servo motor opens the compartment. Otherwise, the compartment stays closed.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-    U(["👤 Usuário"]) --> APP["📱 App FeedCat"]
-    APP -- "HTTP via Wi-Fi<br/>pesos, Wi-Fi, abrir/fechar" --> ESP["ESP32"]
-    ESP -- "respostas" --> APP
-    CEL["Células de carga"] -- "sinal analógico" --> HX["HX711"]
-    HX -- "peso digital" --> ESP
-    ESP -- "UART 115200 8N1<br/>dígitos ASCII e #" --> FPGA["FPGA"]
-    FPGA -- "PWM 3,3 V" --> CONV["Conversor de nível<br/>3,3 V → 5 V"]
-    CONV -- "PWM 5 V" --> SERVO["Servo MG995"]
+    U(["👤 User"]) --> APP["📱 FeedCat app"]
+    APP -- "HTTP over Wi-Fi<br/>weights, Wi-Fi, open/close" --> ESP["ESP32"]
+    ESP -- "responses" --> APP
+    CEL["Load cells"] -- "analog signal" --> HX["HX711"]
+    HX -- "digital weight" --> ESP
+    ESP -- "UART 115200 8N1<br/>ASCII digits and #" --> FPGA["FPGA"]
+    FPGA -- "3.3 V PWM" --> CONV["Level shifter<br/>3.3 V → 5 V"]
+    CONV -- "5 V PWM" --> SERVO["MG995 servo"]
 ```
 
-| Componente | Função |
+| Component | Role |
 |---|---|
-| **FPGA (Intel/Altera, Quartus)** | Lógica principal em Verilog: recebe os pesos pela serial, compara com a faixa e controla o servo por PWM |
-| **4 células de carga 50 kg + HX711** | Medem o peso de quem está na balança |
-| **ESP32** | Ponte entre o app e a FPGA: cria uma rede Wi-Fi, expõe uma API HTTP e envia os dados para a FPGA via UART |
-| **Servo MG995** | Abre e fecha o compartimento de comida |
-| **App FeedCat (Expo / React Native)** | Configura o Wi-Fi do ESP32, define os pesos mínimo e máximo e abre ou fecha o compartimento manualmente |
+| **FPGA (Intel/Altera, Quartus)** | Main logic in Verilog: receives the weights over serial, compares them with the range and drives the servo with PWM |
+| **4 × 50 kg load cells + HX711** | Measure the weight of whoever is on the scale |
+| **ESP32** | Bridge between the app and the FPGA: hosts a Wi-Fi network, exposes an HTTP API and forwards the data to the FPGA over UART |
+| **MG995 servo** | Opens and closes the food compartment |
+| **FeedCat app (Expo / React Native)** | Sets up the ESP32 Wi-Fi, sets the minimum and maximum weight, and opens or closes the compartment manually |
 
-## Circuito digital (FPGA)
+> The ESP32 firmware is not included in this repository.
 
-Código em [`hardware/Verilog`](hardware/Verilog), dividido em fluxo de dados e unidades de controle:
+## Digital circuit (FPGA)
 
-| Arquivo | Descrição |
+The code is in [`hardware/Verilog`](hardware/Verilog). It is split into a datapath (*fluxo de dados*, FD) and control units (*unidades de controle*, UC). File and signal names are in Portuguese.
+
+| File | Description |
 |---|---|
-| `circuito.v` | Módulo topo: liga FD, as duas UCs e os 6 displays de 7 segmentos |
-| `circuito_fd.v` | Fluxo de dados: receptor serial, registrador de deslocamento dos pesos, comparadores, contador de posição do servo e gerador de PWM |
-| `circuito_uc.v` | UC de recepção: guarda os dígitos recebidos e alterna o modo "abrir manualmente" quando chega o comando `#` |
-| `comporta_uc.v` | UC da comporta: abre o servo gradualmente, espera enquanto a condição de abertura continuar ativa e depois fecha |
-| `servo/` | `controle_servo_3`, `circuito_pwm` (8 posições, período de 20 ms) e `contador_updown` (sobe de 0 a 7 e volta a 0) |
-| `serial/rx_serial_8n1_nandland.v` | Receptor UART, com 434 ciclos por bit (115200 baud com clock de 50 MHz) |
-| `modulos/` | Componentes básicos: `comparador_n`, `registrador_n`, `contador_m`, `mux_8x1_n`, `hexa7seg` |
-| `circuito_tb.v` | Testbench: envia bytes pela serial usando `tx_serial_8N1_nandland` |
+| `circuito.v` | Top-level module: connects the datapath, both control units and the six 7-segment displays |
+| `circuito_fd.v` | Datapath: serial receiver, shift register for the weights, comparators, servo position counter and PWM generator |
+| `circuito_uc.v` | Reception control unit: stores the received digits and toggles "manual open" mode when the `#` command arrives |
+| `comporta_uc.v` | Gate control unit: opens the servo gradually, waits while the opening condition is still true, then closes it |
+| `servo/` | `controle_servo_3`, `circuito_pwm` (8 positions, 20 ms period) and `contador_updown` (counts 0 to 7 and back to 0) |
+| `serial/rx_serial_8n1_nandland.v` | UART receiver, 434 clock cycles per bit (115200 baud with a 50 MHz clock) |
+| `modulos/` | Basic building blocks: `comparador_n`, `registrador_n`, `contador_m`, `mux_8x1_n`, `hexa7seg` |
+| `circuito_tb.v` | Testbench: sends bytes over serial using `tx_serial_8N1_nandland` |
 
-### Protocolo serial
+### Serial protocol
 
-Todos os bytes são caracteres ASCII, a 115200 baud, no formato 8N1.
+Every byte is an ASCII character, sent at 115200 baud in 8N1 format.
 
-- **Dígitos `0`–`9`**: entram num registrador de deslocamento. A FPGA espera 6 dígitos, nesta ordem: peso máximo (2 dígitos), peso mínimo (2 dígitos) e peso atual (2 dígitos). Cada valor usa unidades de 0,1 kg, então `15` significa 1,5 kg.
-- **`#`**: comando para abrir ou fechar o compartimento manualmente, por exemplo para reabastecer.
+- **Digits `0`–`9`** go into a shift register. The FPGA expects 6 digits in this order: maximum weight (2 digits), minimum weight (2 digits) and current weight (2 digits). Each value is in units of 0.1 kg, so `15` means 1.5 kg. Because it is a shift register, all 6 digits must be sent on every update.
+- **`#`** toggles manual open/close, for example to refill the compartment.
 
-Por exemplo, a sequência `302015` define máximo de 3,0 kg, mínimo de 2,0 kg e peso atual de 1,5 kg. Como o peso atual está fora da faixa, o compartimento continua fechado.
+For example, the sequence `302015` sets the maximum to 3.0 kg, the minimum to 2.0 kg and the current weight to 1.5 kg. The current weight is outside the range, so the compartment stays closed.
 
-### Funcionamento
+### How it works
 
-1. Quando `peso_min ≤ peso_atual ≤ peso_max` (e `peso_max ≠ 0`), a UC da comporta começa a abrir o servo.
-2. O servo passa pelas posições 0 → 7 com intervalo de 20 ms entre elas, para abrir suavemente.
-3. O servo fica aberto enquanto a condição continuar verdadeira, ou seja, enquanto o gato estiver na balança ou o modo manual estiver ativo.
-4. Depois disso, o servo volta de 7 → 0 e fecha o compartimento.
+1. The gate control unit starts opening the servo when `min_weight ≤ current_weight ≤ max_weight`, when the `abrir` button is pressed, or when manual mode (`#`) is on. Except in manual mode, a maximum weight must have been configured (`max_weight ≠ 0`).
+2. The servo steps through positions 0 → 7, 20 ms apart, so it opens smoothly.
+3. It stays open while the condition remains true, that is, while the cat is on the scale or manual mode is on.
+4. Then it steps back from 7 → 0 and closes the compartment.
 
-### Pinos e depuração na placa
+### Board I/O and debugging
 
-| Sinal | Descrição |
+| Signal | Description |
 |---|---|
-| `abrir` | Botão para abrir manualmente |
-| `select_ucs` | Chave que escolhe o que aparece nos displays |
-| `HEX5..HEX0` | Com `select_ucs = 0`: peso máx., peso mín. e peso atual. Com `select_ucs = 1`: posição do servo, estado da UC de recepção e estado da UC da comporta |
-| `db_*`, `comando_db` | LEDs de depuração |
+| `abrir` | Push button to open manually |
+| `select_ucs` | Switch that chooses what the displays show |
+| `HEX5..HEX0` | With `select_ucs = 0`: max weight, min weight and current weight. With `select_ucs = 1`: servo position, reception control unit state and gate control unit state |
+| `abrir_db`, `comando_db`, `db_pertence_ao_intervalo`, `db_abrir_comporta` | Debug LEDs: open button, `#` command received, weight in range, gate opening |
 
-### Simulação
+### Simulation
 
-Use [Icarus Verilog](https://steveicarus.github.io/iverilog/) e [GTKWave](https://gtkwave.sourceforge.net/):
+Use [Icarus Verilog](https://steveicarus.github.io/iverilog/) and [GTKWave](https://gtkwave.sourceforge.net/):
 
 ```bash
 cd hardware/Verilog
-python comp.py              # gera comp.txt com todos os .v que não são testbench
+python3 comp.py             # writes comp.txt listing every non-testbench .v file
 echo circuito_tb.v >> comp.txt
 iverilog -o circuito.out -c comp.txt
-vvp circuito.out            # gera wave.vcd
+vvp circuito.out            # writes wave.vcd
 gtkwave wave.vcd a.gtkw
 ```
 
-> O `comp.txt` versionado foi gerado no Windows e usa `\` nos caminhos. No Linux/macOS, rode `comp.py` de novo antes de compilar.
+> - The `comp.txt` in the repository was generated on Windows and uses `\` in its paths. On Linux or macOS, run `comp.py` again before compiling.
+> - The testbench waits an extremely long time before `$finish`, so the simulation does not end by itself and `wave.vcd` keeps growing. Stop `vvp` with Ctrl+C once the cases you want have run, or reduce that delay in `circuito_tb.v`.
 
-### Síntese
+### Synthesis
 
-O projeto do Quartus está arquivado em `hardware/Quartus/circuito.qar`. Para abrir, use **Quartus Prime → Project → Restore Archived Project**.
+The Quartus project is archived in `hardware/Quartus/circuito.qar`. To open it, use **Quartus Prime → Project → Restore Archived Project**.
 
-## Aplicativo
+## Mobile app
 
-O código fica em [`app/`](app) e usa Expo SDK 51 com expo-router.
+The code is in [`app/`](app) and uses Expo SDK 51 with expo-router. The interface is in Portuguese.
 
-Telas:
-- **Home** (`app/(tabs)/index.tsx`): formulário para os pesos mínimo e máximo (de 0,5 a 9,9 kg), formulário com o SSID e a senha do Wi-Fi e botão para abrir ou fechar a porta.
-- **Informações** (`app/(tabs)/explore.tsx`): manual de uso.
+Screens:
+- **Home** (`app/(tabs)/index.tsx`): form for the minimum and maximum weight (0.5 to 9.9 kg), form for the Wi-Fi SSID and password, and a button to open or close the door.
+- **Informações** (`app/(tabs)/explore.tsx`): user guide.
 
-O app se comunica com o ESP32 por HTTP. O IP padrão é `192.168.4.1`, o do access point "Feed Cat":
+The app talks to the ESP32 over HTTP. The default IP is `192.168.4.1`, which belongs to the "Feed Cat" access point:
 
-| Método | Rota | Corpo |
+| Method | Route | Body |
 |---|---|---|
-| `POST` | `/receive-wifi` | `{ wifiSsid, wifiPassword }` e resposta `{ status: "connected", ip }` |
-| `POST` | `/send-scale-data` | `{ minimumWeight, maximumWeight }` em gramas |
+| `POST` | `/receive-wifi` | `{ wifiSsid, wifiPassword }`, response `{ status: "connected", ip }` |
+| `POST` | `/send-scale-data` | `{ minimumWeight, maximumWeight }` in grams |
 | `POST` | `/open-door` | `{ doorStatus }` |
 
-Para rodar:
+To run it:
 
 ```bash
 cd app
@@ -113,34 +118,34 @@ npm install
 npx expo start
 ```
 
-## Estrutura do repositório
+## Repository layout
 
 ```
-docs/       especificação (PDF), diagrama de arquitetura e pseudocódigo
+docs/       specification (PDF, in Portuguese), original architecture diagram and pseudocode
 hardware/
-├── Verilog/   circuito final e testbench
-└── Quartus/   projeto arquivado (.qar)
-app/        aplicativo mobile (Expo)
+├── Verilog/   final circuit and testbench
+└── Quartus/   archived project (.qar)
+app/        mobile app (Expo)
 ```
 
-## Versões
+## Versions
 
-Cada semana do projeto virou uma versão (tag) do repositório:
+Each week of the project is a tagged version of the repository:
 
-| Tag | Semana | Conteúdo |
+| Tag | Week | Contents |
 |---|---|---|
-| [`v0`](../../tree/v0) | 0 | Especificação, arquitetura e pseudocódigo |
-| [`v1`](../../tree/v1) | 1 | Protótipo: recepção serial ESP32 → FPGA mostrando o dígito no display |
-| [`v3`](../../tree/v3) | 3 | Versão final: comparação de pesos, controle do servo e aplicativo |
+| [`v0`](https://github.com/jofe2003/feedcat/tree/v0) | 0 | Specification, architecture and pseudocode |
+| [`v1`](https://github.com/jofe2003/feedcat/tree/v1) | 1 | Prototype: ESP32 → FPGA serial reception, showing the digit on a display |
+| [`v3`](https://github.com/jofe2003/feedcat/tree/v3) | 3 | Final version: weight comparison, servo control and mobile app |
 
-## Equipe
+## Team
 
 - Felipe Luis Korbes
 - João Felipe de Souza Melo
 - João Felipe Pereira Carvalho
 
-Professor: Reginaldo Arakaki
+Advisor: Prof. Reginaldo Arakaki
 
-## Licença
+## License
 
-Distribuído sob a licença MIT. Veja [LICENSE](LICENSE).
+Distributed under the MIT License. See [LICENSE](LICENSE).
